@@ -21,8 +21,9 @@ use App\Models\mongodb\projects_listing;
 
 class APIController extends Controller
 {
-    public function listing(Request $request, $plid)
+    public function listing($plid)
     {
+        $plid = (int)$plid;
         $pids = construction_product_projects::select('project_id')->where('construction_product_id',$plid)->get();
         $pids_array = [];
         foreach ($pids as $pid){
@@ -33,19 +34,18 @@ class APIController extends Controller
         foreach ($pids_available as $pid){
             array_push($pids_avail_array,$pid->_id);
         }
-        $diff = array_diff($pids_array,$pids_avail_array);
-        foreach ($diff as $pid){
-            if (in_array($pid,$pids_array)){
-                //This means we need to add project in mongoDB Database
-                $project = [];
-                $project['construction_product_id'] = $plid;
-                projects_listing::where('_id',$pid)->update($project,['upsert' => true]);
-                $this->project($pid);
-            }
-            else{
-                //This means project is to be removed from mongoDB Database
-                projects_listing::where('_id',$pid)->delete();
-            }
+        $diff1 = array_diff($pids_array,$pids_avail_array);
+        $diff2 = array_diff($pids_avail_array,$pids_array);
+        foreach ($diff1 as $pid){
+            //This means we need to add project in mongoDB Database
+            $project = [];
+            $project['construction_product_id'] = $plid;
+            projects_listing::where('_id',$pid)->update($project,['upsert' => true]);
+            $this->project($pid);
+        }
+        foreach ($diff2 as $pid){
+            //This means project is to be removed from mongoDB Database
+            projects_listing::where('_id',$pid)->delete();
         }
 
         $cp = construction_product::select('created_at', 'updated_at', 'deleted_at')->where('id',$plid)->get()->toArray()[0];
@@ -61,9 +61,11 @@ class APIController extends Controller
     }
 
     public function project($pid){
+        $pid = (int)$pid;
         $proj_gen = projects::select('name', 'state', 'building_use', 'sector',
         'tracked', 'verified', 'active', 'status', 'created_at', 'average_area',
         'construction_cost')->where('id',$pid)->get()->toArray()[0];
+        //return $proj_gen;
         $proj_tech = project_technical_detail::select('construction_start',
         'construction_finish', 'max_floor_above_ground', 'max_floor_below_ground')
         ->where('id',$pid)->get()->toArray()[0];
@@ -79,6 +81,7 @@ class APIController extends Controller
     }
 
     public function records($plid){
+        $plid = (int)$plid;
         $details = [];
         $details['records'] = [];
         $cpds = construction_product_details::select('id','product_group_id', 'product_subgroup_id', 'equivalent', 'bis_approved')->where('construction_product_id',$plid)->get()->toArray();
