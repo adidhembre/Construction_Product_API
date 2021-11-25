@@ -15,6 +15,7 @@ use App\Models\mysql\groups;
 use App\Models\mysql\sub_groups;
 use App\Models\mysql\brands;
 use App\Models\mysql\construction_product_brands;
+use App\Models\mysql\Construction_product_attachments;
 //Models from MongoDB
 use App\Models\mongodb\projects_listing;
 
@@ -52,6 +53,7 @@ class APIController extends Controller
         $detail['listing_created_at'] = gettype($cp['created_at']) == 'string' ? strtotime($cp['created_at']) : $cp['created_at'];
         $detail['listing_updated_at'] = gettype($cp['updated_at']) == 'string' ? strtotime($cp['updated_at']) : $cp['updated_at'];
         $detail['listing_deleted_at'] = gettype($cp['deleted_at']) == 'string' ? strtotime($cp['deleted_at']) : $cp['deleted_at'];
+        $detail['attachments'] = Construction_product_attachments::select('id','name','link')->where('construction_product_id',$plid)->get()->toArray();
         foreach ($pids_array as $pid){
             projects_listing::where('_id',$pid)->update($detail,['upsert' => true]);
         }
