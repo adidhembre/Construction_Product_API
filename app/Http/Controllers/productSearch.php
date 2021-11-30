@@ -17,14 +17,14 @@ class productSearch extends Controller
         //all filters in $avail_filters other than $filter_with_betwen_operator will be treated as equal operator
         $filter_with_between_operators = ['listing_created_at','project_created_at', 'average_area', 'project_value'];
         //Defining Search path for each filter key
-        $serch_path = ['records.group.id','records.subgroup.id','recods.brand.id','listing_created_at',
-        'project_created_at','sector', 'latest_status.id','latest_status.substatus_id',
-        'state', 'building_use', 'tags.id', 'average_area', 'max_floors_above_ground',
+        $serch_path = ['records.group.name','records.subgroup.name','records.brand.name','listing_created_at',
+        'project_created_at','sector', 'latest_status.name','latest_status.substatus_id',
+        'state', 'building_use', 'tags.name', 'average_area', 'max_floors_above_ground',
         'max_floor_below_ground', 'construction_cost', 'construction_start', 'construction_finish',
         'tracked', 'verified', 'active'];
         //Defining type of input
-        $type_of_search = ['int','int','int','date', 'date','string', 'int','int', 'string', 'string', 'int', 'int', 'int',
-        'int', 'float', 'int', 'int', 'int', 'int', 'int'];
+        $type_of_search = ['string','string','string','date', 'date','string', 'string','int',
+        'string', 'string', 'string', 'int', 'int', 'int', 'float', 'int', 'int', 'int', 'int', 'int'];
         $avil_columns = ['listing_created_at','project_created_at','sector', 'latest_status',
         'state','region', 'average_area', 'max_floors_above_ground', 'max_floor_below_ground',
         'project_value', 'start_year', 'finish_year'];
@@ -76,7 +76,7 @@ class productSearch extends Controller
         $filter_count = [];
         $unwind_required = ['group', 'subgroup', 'brand', 'tags'];
         $unwind_paths = ['group' => ['records'],'subgroup' => ['records'],'brand'=>['records','records.brand'],'tags'=>['tags']];
-        $avoid = ['listing_created_at','project_created_at',];
+        $avoid = ['listing_created_at','project_created_at','average_area','project_value'];
         foreach($avail_filters as $filter){
             if(in_array($filter,$avoid)){
                 //do nothing
@@ -90,9 +90,17 @@ class productSearch extends Controller
                     foreach($unwind_paths[$filter] as $unwind){
                         array_push($advance_filter,['$unwind' => ['path' => '$'.$unwind]]);
                     }
+                    array_push($advance_filter,['$group' => ['_id' => ['$'.$path,'$_id'],'name' => ['$first'=> '$'.$path]]]);
+                    array_push($advance_filter,['$group' => ['_id' => ['$name'],'name' => ['$first'=> '$name'], 'count' => ['$sum'=> 1]]]);
                 }
-                array_push($advance_filter,['$group' => ['_id' => '$'.$path,'count'=>['$sum' => 1]]]);
-                $filter_count[$filter]= projects_listing::raw()->aggregate($advance_filter)->toArray();
+                else{
+                    array_push($advance_filter,['$group' => ['_id' => '$'.$path,'name' => ['$first'=> '$'.$path],'count'=>['$sum' => 1]]]);
+                }
+                $get = projects_listing::raw()->aggregate($advance_filter)->toArray();
+                $filter_count[$filter] = [];
+                foreach($get as $g){
+                    array_push($filter_count[$filter],[$g['name']=>$g['count']]);
+                }
             }
         }
         return compact('result','filter_count');

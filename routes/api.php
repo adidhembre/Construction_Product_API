@@ -27,5 +27,5 @@ Route::get('/records/{plid}',[APIController::class,'records']);
 //final Route for Analytics API
 Route::get('/product-search/',[productSearch::class,'product']);
 /* sample seach url
-http://127.0.0.1:8000/api/product-search?filters[state]=Madhya%20Pradesh&filters[construction_cost]=19-25&columns[]=state&columns[]=average_area
+http://127.0.0.1:8000/api/product-search?filters[state]=Madhya%20Pradesh&filters[project_value]=19-25&columns[]=state&columns[]=average_area
 */
