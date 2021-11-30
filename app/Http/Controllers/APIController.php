@@ -16,6 +16,11 @@ use App\Models\mysql\sub_groups;
 use App\Models\mysql\brands;
 use App\Models\mysql\construction_product_brands;
 use App\Models\mysql\Construction_product_attachments;
+use App\Models\mysql\technical_detail_tag_relation;
+use App\Models\mysql\project_tags;
+use App\Models\mysql\project_status;
+use App\Models\mysql\project_latest_status;
+use App\Models\mysql\brand_companies;
 //Models from MongoDB
 use App\Models\mongodb\projects_listing;
 
@@ -48,11 +53,13 @@ class APIController extends Controller
             projects_listing::where('_id',$pid)->delete();
         }
 
-        $cp = construction_product::select('created_at', 'updated_at', 'deleted_at')->where('id',$plid)->get()->toArray()[0];
+        $cp = construction_product::select('created_at', 'updated_at', 'deleted_at', 'note', 'note_date')->where('id',$plid)->get()->toArray()[0];
         $detail = [];
         $detail['listing_created_at'] = gettype($cp['created_at']) == 'string' ? strtotime($cp['created_at']) : $cp['created_at'];
         $detail['listing_updated_at'] = gettype($cp['updated_at']) == 'string' ? strtotime($cp['updated_at']) : $cp['updated_at'];
         $detail['listing_deleted_at'] = gettype($cp['deleted_at']) == 'string' ? strtotime($cp['deleted_at']) : $cp['deleted_at'];
+        $detail['note'] = $cp['note'];
+        $detail['note_date'] = gettype($cp['note_date']) == 'string' ? strtotime($cp['note_date']) : $cp['note_date'];
         $detail['attachments'] = Construction_product_attachments::select('id','name','link')->where('construction_product_id',$plid)->get()->toArray();
         foreach ($pids_array as $pid){
             projects_listing::where('_id',$pid)->update($detail,['upsert' => true]);
@@ -62,13 +69,13 @@ class APIController extends Controller
 
     public function project($pid){
         $pid = (int)$pid;
-        $proj_gen = projects::select('name', 'state', 'building_use', 'sector',
+        $proj_gen = projects::select('name', 'slug', 'state', 'building_use', 'sector',
         'tracked', 'verified', 'active', 'status', 'created_at', 'average_area',
         'construction_cost')->where('id',$pid)->get()->toArray()[0];
         //return $proj_gen;
-        $proj_tech = project_technical_detail::select('construction_start',
+        $proj_tech = project_technical_detail::select('id','construction_start',
         'construction_finish', 'max_floor_above_ground', 'max_floor_below_ground')
-        ->where('id',$pid)->get()->toArray()[0];
+        ->where('project_id',$pid)->get()->toArray()[0];
         $project = array_merge($proj_gen,$proj_tech);
         //to change key name only
         $project['project_created_at'] = gettype($project['created_at']) == "string" ? strtotime($project['created_at']) : $project['created_at'];
@@ -76,6 +83,18 @@ class APIController extends Controller
         //to get value instead of id
         $project['state'] = $project['state'] == null ? null : states::select('name')->where('id',$project['state'])->first()['name'];
         $project['sector'] = $project['sector'] == null ? null : project_sectors::select('name')->where('id',$project['sector'])->first()['name'];
+        $tags = technical_detail_tag_relation::select('tag_id')->where('technical_detail_id', $project['id'])->get();
+        unset($project['id']);
+        $project['tags'] = [];
+        foreach ($tags as $tag){
+            $t = ['id'=>$tag->tag_id,'name'=>project_tags::select('name')->where('id',$tag->tag_id)->first()['name']];
+            array_push($project['tags'],$t);
+        }
+        $project['latest_status'] = [];
+        $st = project_latest_status::select('status', 'sub_status')->where('project_id',$pid)->first();
+        $project['latest_status']['id'] = $st['status'];
+        $project['latest_status']['name'] = project_status::select('name')->where('id',$project['latest_status']['id'])->first()['name'];
+        $project['latest_status']['substatus_id'] = $st['sub_status'];
         projects_listing::where('_id',$pid)->update($project,['upsert' => true]);
         return ["message"=>"Project Updated Successfully"];
     }
@@ -94,7 +113,11 @@ class APIController extends Controller
             $record['brand'] = [];
             $brands = construction_product_brands::select('brand_id')->where('const_product_details_id',$cpd['id'])->get();
             foreach($brands as $brand){
-                $b = ['id'=>$brand['brand_id'],'name'=> brands::select('title')->where('id',$brand['brand_id'])->first()['title']];
+                $b = [];
+                $b['id'] = $brand['brand_id'];
+                $b['name'] = brands::select('title')->where('id',$b['id'])->first()['title'];
+                $cid = brand_companies::select('company_id')->where('brand_id',$b['id'])->first();
+                $b['company_id'] = $cid == null ? null : $cid->company_id;
                 array_push($record['brand'],$b);
             }
             array_push($details['records'],$record);
