@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use DateTime;
 //Models from MySQL
 use App\Models\mysql\construction_product;
 use App\Models\mysql\construction_product_projects;
@@ -21,11 +22,28 @@ use App\Models\mysql\project_tags;
 use App\Models\mysql\project_status;
 use App\Models\mysql\project_latest_status;
 use App\Models\mysql\brand_companies;
+use App\Models\mysql\regions;
+use App\Models\mysql\project_type;
+use App\Models\mysql\project_type_relation;
+use App\Models\mysql\project_attributes;
+use App\Models\mysql\project_attribute_relation;
 //Models from MongoDB
 use App\Models\mongodb\projects_listing;
 
 class APIController extends Controller
 {
+    private function MongoDate($dateString){
+        $date = DateTime::createFromFormat( 'Y-m-d\TH:i:s.uT', $dateString);
+        $mDate = new \MongoDB\BSON\UTCDateTime( $date->format('U') * 1000 );
+        return $mDate;
+    }
+
+    private function MongoDateOnly($dateString){
+        $date = DateTime::createFromFormat( 'Y-m-d', $dateString);
+        $mDate = new \MongoDB\BSON\UTCDateTime( $date->format('U') * 1000 );
+        return $mDate;
+    }
+
     public function listing($plid)
     {
         $plid = (int)$plid;
@@ -55,11 +73,11 @@ class APIController extends Controller
 
         $cp = construction_product::select('created_at', 'updated_at', 'deleted_at', 'note', 'note_date')->where('id',$plid)->get()->toArray()[0];
         $detail = [];
-        $detail['listing_created_at'] = gettype($cp['created_at']) == 'string' ? strtotime($cp['created_at']) : $cp['created_at'];
-        $detail['listing_updated_at'] = gettype($cp['updated_at']) == 'string' ? strtotime($cp['updated_at']) : $cp['updated_at'];
-        $detail['listing_deleted_at'] = gettype($cp['deleted_at']) == 'string' ? strtotime($cp['deleted_at']) : $cp['deleted_at'];
+        $detail['listing_created_at'] = gettype($cp['created_at']) == 'string' ? $this->MongoDate($cp['created_at']) : $cp['created_at'];
+        $detail['listing_updated_at'] = gettype($cp['updated_at']) == 'string' ? $this->MongoDate($cp['updated_at']) : $cp['updated_at'];
+        $detail['listing_deleted_at'] = gettype($cp['deleted_at']) == 'string' ? $this->MongoDate($cp['deleted_at']) : $cp['deleted_at'];
         $detail['note'] = $cp['note'];
-        $detail['note_date'] = gettype($cp['note_date']) == 'string' ? strtotime($cp['note_date']) : $cp['note_date'];
+        $detail['note_date'] = gettype($cp['note_date']) == 'string' ? $this->MongoDateOnly($cp['note_date']) : $cp['note_date'];
         $detail['attachments'] = Construction_product_attachments::select('id','name','link')->where('construction_product_id',$plid)->get()->toArray();
         foreach ($pids_array as $pid){
             projects_listing::where('_id',$pid)->update($detail,['upsert' => true]);
@@ -70,25 +88,44 @@ class APIController extends Controller
     public function project($pid){
         $pid = (int)$pid;
         $proj_gen = projects::select('name', 'slug', 'state', 'building_use', 'sector',
-        'tracked', 'verified', 'active', 'status', 'created_at', 'average_area',
-        'construction_cost')->where('id',$pid)->get()->toArray()[0];
+        'tracked', 'verified', 'active', 'status', 'created_at', 'updated_at', 'average_area',
+        'construction_cost', 'region_id', 'latitude', 'longitude')->where('id',$pid)->get()->toArray()[0];
         //return $proj_gen;
         $proj_tech = project_technical_detail::select('id','construction_start',
-        'construction_finish', 'max_floor_above_ground', 'max_floor_below_ground')
+        'construction_finish', 'max_floor_above_ground', 'max_floor_below_ground', 'apartment_units')
         ->where('project_id',$pid)->get()->toArray()[0];
         $project = array_merge($proj_gen,$proj_tech);
         //to change key name only
-        $project['project_created_at'] = gettype($project['created_at']) == "string" ? strtotime($project['created_at']) : $project['created_at'];
+        $project['project_created_at'] = gettype($project['created_at']) == "string" ? $this->MongoDate($project['created_at']) : $project['created_at'];
         unset($project['created_at']);
+        $project['project_updated_at'] = gettype($project['updated_at']) == "string" ? $this->MongoDate($project['updated_at']) : $project['updated_at'];
+        unset($project['updated_at']);
         //to get value instead of id
         $project['state'] = $project['state'] == null ? null : states::select('name')->where('id',$project['state'])->first()['name'];
         $project['sector'] = $project['sector'] == null ? null : project_sectors::select('name')->where('id',$project['sector'])->first()['name'];
+        $project['region'] = $project['region_id'] == null ? null : regions::select('name')->where('id',$project['region_id'])->first()['name'];
+        unset($project['region_id']);
+        $project['latitude'] = $project['latitude'] == null ? null : (float)$project['latitude'];
+        $project['longitude'] = $project['longitude'] == null ? null : (float)$project['longitude'];
+        $project['apartment_units'] = $project['apartment_units'] == null ? null : (int)$project['apartment_units'];
+        $project['tags'] = [];
         $tags = technical_detail_tag_relation::select('tag_id')->where('technical_detail_id', $project['id'])->get();
         unset($project['id']);
-        $project['tags'] = [];
         foreach ($tags as $tag){
             $t = ['id'=>$tag->tag_id,'name'=>project_tags::select('name')->where('id',$tag->tag_id)->first()['name']];
             array_push($project['tags'],$t);
+        }
+        $project['building_use'] = [];
+        $uses = project_type_relation::select('type_id')->where('project_id', $pid)->get();
+        foreach ($uses as $use){
+            $u = ['id'=>$use->type_id,'name'=>project_type::select('type')->where('id',$use->type_id)->first()['type']];
+            array_push($project['building_use'],$u);
+        }
+        $project['category'] = [];
+        $categories = project_attribute_relation::select('attribute_id')->where('project_id', $pid)->get();
+        foreach ($categories as $cat){
+            $c = ['id'=>$cat->attribute_id,'name'=>project_attributes::select('name')->where('id',$cat->attribute_id)->first()['name']];
+            array_push($project['category'],$c);
         }
         $project['latest_status'] = [];
         $st = project_latest_status::select('status', 'sub_status')->where('project_id',$pid)->first();
